@@ -5,7 +5,7 @@
 
     import { getContext } from "svelte";
     import type StatBlockRenderer from "../statblock";
-    import type { Monster } from "index";
+    import type { Item, Monster } from "index";
     import { Linkifier } from "src/parser/linkify";
     import { parseForDice } from "src/parser/dice-parsing";
     import type { Writable } from "svelte/store";
@@ -24,9 +24,12 @@
     let canDice = getContext<boolean>("dice");
 
     let parseDice = item.dice;
-    const monsterStore = getContext<Writable<Monster>>("monster");
-    let monster = $monsterStore;
-    monsterStore.subscribe((m) => (monster = m));
+    let store = getContext<Writable<Monster|Item>>("monster");
+    if (store == undefined) {
+        store = getContext<Writable<Monster|Item>>("item");
+    }
+    let source = $store;
+    store.subscribe((m) => (source = m));
     let plugin = getContext<StatBlockPlugin>("plugin");
     let layout = getContext<Layout>("layout");
 
@@ -34,12 +37,12 @@
     if (canDice && parseDice) {
         if (
             item.diceProperty &&
-            item.diceProperty in monster &&
-            typeof monster[item.diceProperty] == "string"
+            item.diceProperty in source &&
+            typeof source[item.diceProperty] == "string"
         ) {
-            split = [{ text: monster[item.diceProperty] as string }];
+            split = [{ text: source[item.diceProperty] as string }];
         } else {
-            const parsed = parseForDice(layout, stringify(property), monster);
+            const parsed = parseForDice(layout, stringify(property), source);
             if (Array.isArray(parsed)) {
                 split = parsed;
             } else {
@@ -51,8 +54,8 @@
         try {
             const frame = document.body.createEl("iframe");
             const funct = (frame.contentWindow as any).Function;
-            const func = new funct("monster", "property", item.diceCallback);
-            const parsed = func.call(undefined, monster, property) ?? property;
+            const func = new funct("source", "property", item.diceCallback);
+            const parsed = func.call(undefined, source, property) ?? property;
             document.body.removeChild(frame);
             if (Array.isArray(parsed)) {
                 split = parsed;

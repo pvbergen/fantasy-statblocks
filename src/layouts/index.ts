@@ -26,3 +26,6 @@ export const DefaultLayouts = [
     LayoutDaggerheartCard,
     LayoutDaggerheartEnvironment
 ];
+export const ItemDefaultLayouts = [
+    Layout5e
+];

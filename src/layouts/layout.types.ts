@@ -1,4 +1,4 @@
-import type { Monster } from "../../index";
+import type { Item, Monster } from "../../index";
 import type { LayoutCSSProperties } from "./layout.css";
 
 export const StatblockItemTypes = [
@@ -53,7 +53,7 @@ export type CommonProps = RequiredProps & {
     fallback?: string;
     hasRule?: boolean;
     dice?: boolean;
-    diceProperty?: keyof Monster;
+    diceProperty?: keyof Monster | keyof Item;
     diceText?: string;
     diceCallback?: string;
     doNotAddClass?: boolean;

@@ -1,13 +1,13 @@
 <script lang="ts">
-    import { Bestiary } from "src/bestiary/bestiary";
+    import { Itemary } from "src/itemary/itemary";
     import Pagination from "../Pagination.svelte";
-    import Creature from "./Creature.svelte";
+    import ItemEntry from "./ItemEntry.svelte";
     import type StatBlockPlugin from "src/main";
     import { setContext } from "../layout/context";
     import Filters from "./filters/Filters.svelte";
     import { NONE, NameFilter, SourcesFilter } from "./filters/filters";
     import { prepareSimpleSearch } from "obsidian";
-    import type { Monster } from "index";
+    import type { Item } from "index";
     import { derived, writable } from "svelte/store";
     import { onDestroy } from "svelte";
     import { confirmWithModal } from "src/view/statblock";
@@ -19,9 +19,9 @@
     export let backgroundColor: string;
     export let paddingTop: string;
 
-    const creatures = writable(Bestiary.getBestiaryCreatures());
-    let ref = Bestiary.onSortedBy("name", (values) => {
-        $creatures = values;
+    const items = writable(Itemary.getItemaryItems());
+    let ref = Itemary.onSortedBy("name", (values) => {
+        $items = values;
     });
 
     onDestroy(() => {
@@ -31,28 +31,28 @@
     const slice = writable(50);
     const page = writable(1);
     const filtered = derived(
-        [creatures, NameFilter, SourcesFilter],
-        ([creatures, name, sources]) => {
-            let toConsider: Monster[] = [];
-            for (const creature of creatures) {
+        [items, NameFilter, SourcesFilter],
+        ([items, name, sources]) => {
+            let toConsider: Item[] = [];
+            for (const item of items) {
                 let should = true;
                 if (name.length) {
                     const search = prepareSimpleSearch(name);
-                    if (!search(creature.name)) {
+                    if (!search(item.name)) {
                         should = false;
                     }
                 }
                 if (
                     sources.length &&
-                    ![creature.source].flat().some((s) => s && sources.includes(s))
+                    ![item.source].flat().some((s) => s && sources.includes(s))
                 ) {
                     should = false;
                 }
-                if (!creature.source && sources.includes(NONE)) {
+                if (!item.source && sources.includes(NONE)) {
                     should = true;
                 }
                 if (should) {
-                    toConsider.push(creature);
+                    toConsider.push(item);
                 }
             }
 
@@ -65,10 +65,10 @@
         if (
             await confirmWithModal(
                 plugin.app,
-                `Are you sure you want to delete ${$filtered.length} creature${$filtered.length === 1 ? "" : "s"}?`
+                `Are you sure you want to delete ${$filtered.length} item${$filtered.length === 1 ? "" : "s"}?`
             )
         ) {
-            await plugin.deleteMonsters(...$filtered.map((m) => m.name));
+            await plugin.deleteItems(...$filtered.map((m) => m.name));
         }
     };
 
@@ -90,15 +90,15 @@
     >
         <Filters on:remove={() => remove()} />
         <div class="setting-item-description">
-            {$filtered.length ? $filtered.length : "No"} creature{$filtered.length ===
+            {$filtered.length ? $filtered.length : "No"} item{$filtered.length ===
             1
                 ? ""
                 : "s"}
         </div>
     </div>
-    <div class="creatures-container">
+    <div class="items-container">
         {#each $sliced as item (item.name)}
-            <Creature {item} on:close />
+            <ItemEntry {item} on:close />
         {/each}
     </div>
     <div class="pagination-container">

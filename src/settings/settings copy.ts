@@ -24,24 +24,19 @@ import type { DefaultLayout, Layout } from "src/layouts/layout.types";
 import { DICE_ROLLER_SOURCE } from "src/main";
 import FantasyStatblockModal from "src/modal/modal";
 import { nanoid } from "src/util/util";
-import Items from "./items/Items.svelte";
-import { EditItemModal, EditMonsterModal } from "./modal";
+import { Watcher } from "src/watcher/monsterwatcher";
 import Creatures from "./creatures/Creatures.svelte";
-import { LayoutSettings } from "./layoutsettings";
-import { MonsterWatcher } from "src/watcher/monsterwatcher";
+import { EditMonsterModal } from "./modal";
+import type LayoutManager from "src/layouts/manager";
 
 export default class StatblockSettingTab extends PluginSettingTab {
     importer: Importer;
     results: Partial<Monster>[] = [];
     filter!: Setting;
     $UI!: Creatures;
-    monsterLayoutSettings: LayoutSettings
-    itemLayoutSettings: LayoutSettings
     constructor(app: App, private plugin: StatBlockPlugin) {
         super(app, plugin);
         this.importer = new Importer(this.plugin);
-        this.monsterLayoutSettings = new LayoutSettings(plugin, plugin.manager)
-        this.itemLayoutSettings = new LayoutSettings(plugin, plugin.itemManager)
     }
 
     async display(): Promise<void> {
@@ -58,15 +53,11 @@ export default class StatblockSettingTab extends PluginSettingTab {
             this.generateParseSettings(containerEl.createDiv());
             this.generateAdvancedSettings(containerEl.createDiv());
 
-            this.monsterLayoutSettings.generateLayouts(containerEl.createDiv());
+            this.generateLayouts(containerEl.createDiv());
 
             this.generateImports(containerEl.createDiv());
 
             this.generateMonsters(containerEl.createDiv());
-
-            this.itemLayoutSettings.generateLayouts(containerEl.createDiv());
-            
-            this.generateItems(containerEl.createDiv());
 
             const div = containerEl.createDiv("coffee");
             div.createEl("a", {
@@ -122,26 +113,6 @@ export default class StatblockSettingTab extends PluginSettingTab {
     generateTopSettings(container: HTMLDivElement) {
         container.empty();
         new Setting(container).setHeading().setName("General Settings");
-        /* new Setting(container)
-            .setName("Enable Export to PNG")
-            .setDesc(
-                createFragment((e) => {
-                    e.createSpan({
-                        text: 'Add "Export to PNG" button by default. Use '
-                    });
-                    e.createEl("code", { text: "export: false" });
-                    e.createSpan({
-                        text: " to disable per-statblock."
-                    });
-                })
-            )
-            .setDisabled(!this.plugin.diceRollerInstalled)
-            .addToggle((t) =>
-                t.setValue(this.plugin.settings.useDice).onChange(async (v) => {
-                    this.plugin.settings.useDice = v;
-                    await this.plugin.saveSettings();
-                })
-            ); */
         new Setting(container)
             .setName("Integrate Dice Roller")
             .setDesc(
@@ -277,7 +248,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
                     async (v) => {
                         this.plugin.settings.autoParse = v;
                         if (v) {
-                            MonsterWatcher.start();
+                            Watcher.start();
                         }
                         await this.plugin.saveSettings();
                     }
@@ -295,7 +266,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
             .addToggle((t) =>
                 t.setValue(this.plugin.settings.debug).onChange(async (v) => {
                     this.plugin.settings.debug = v;
-                    MonsterWatcher.setDebug();
+                    Watcher.setDebug();
                     await this.plugin.saveSettings();
                 })
             );
@@ -336,7 +307,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
                     if (!path || !path.length) return;
                     this.plugin.settings.paths.push(normalizePath(path));
                     await this.plugin.saveSettings();
-                    await MonsterWatcher.reparseVault();
+                    await Watcher.reparseVault();
                     await this.generateParseSettings(containerEl);
                 });
             });
@@ -349,13 +320,15 @@ export default class StatblockSettingTab extends PluginSettingTab {
                         this.plugin.settings.paths.filter((p) => p != path);
 
                     await this.plugin.saveSettings();
-                    await MonsterWatcher.reparseVault();
+                    await Watcher.reparseVault();
                     await this.generateParseSettings(containerEl);
                 })
             );
         }
     }
-    generateLayouts(containerEl: HTMLDivElement) {
+    generateLayouts(
+        containerEl: HTMLDivElement,
+    ) {
         containerEl.empty();
         new Setting(containerEl).setHeading().setName("Layouts");
 
@@ -438,7 +411,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
                                 ) {
                                     resolve();
                                 }
-                                this.plugin.settings.statBlockLayoutSettings.layouts.push(
+                                this.plugin.settings.layouts.push(
                                     this.getDuplicate(layout)
                                 );
                                 resolve();
@@ -456,8 +429,14 @@ export default class StatblockSettingTab extends PluginSettingTab {
                 }
                 await this.plugin.saveSettings();
                 inputFile.value = "";
-                this.buildCustomLayouts(layoutContainer, containerEl);
-            } catch (e) {}
+                this.buildCustomLayouts(
+                    layoutContainer,
+                    containerEl,
+                    manager,
+                    layoutSettings,
+                    DefaultLayouts
+                );
+            } catch (e) { }
         };
 
         importFile.addButton((b) => {
@@ -477,12 +456,16 @@ export default class StatblockSettingTab extends PluginSettingTab {
                         modal.onClose = async () => {
                             if (!modal.saved) return;
                             const l = this.getDuplicate(modal.layout);
-                            this.plugin.settings.statBlockLayoutSettings.layouts.push(l);
+                            this.plugin.settings.layouts.push(l);
                             this.plugin.manager.addLayout(l);
                             await this.plugin.saveSettings();
                             this.buildCustomLayouts(
                                 layoutContainer,
-                                containerEl
+                                containerEl,
+                                this.plugin.manager,
+                                this.plugin.settings.layouts,
+                                this.plugin.settings.defaultLayouts,
+                                DefaultLayouts
                             );
                         };
                         modal.open();
@@ -502,19 +485,19 @@ export default class StatblockSettingTab extends PluginSettingTab {
                 }
 
                 if (
-                    !this.plugin.settings.statBlockLayoutSettings.default ||
+                    !this.plugin.settings.default ||
                     !this.plugin.manager
                         .getAllLayouts()
-                        .find(({ id }) => id == this.plugin.settings.statBlockLayoutSettings.default)
+                        .find(({ id }) => id == this.plugin.settings.default)
                 ) {
-                    this.plugin.settings.statBlockLayoutSettings.default = Layout5e.id;
+                    this.plugin.settings.default = Layout5e.id;
                     await this.plugin.saveSettings();
                 }
 
-                d.setValue(this.plugin.settings.statBlockLayoutSettings.default ?? Layout5e.id);
+                d.setValue(this.plugin.settings.default ?? Layout5e.id);
 
                 d.onChange(async (v) => {
-                    this.plugin.settings.statBlockLayoutSettings.default = v;
+                    this.plugin.settings.default = v;
                     this.plugin.manager.setDefaultLayout(v);
                     await this.plugin.saveSettings();
                 });
@@ -534,7 +517,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
         const layoutContainer =
             statblockCreatorContainer.createDiv("additional");
 
-        this.buildCustomLayouts(layoutContainer, containerEl);
+        this.buildCustomLayouts(layoutContainer, containerEl, this.plugin.manager, this.plugin.settings.layouts, this.plugin.settings.defaultLayouts, DefaultLayouts);
     }
     getDuplicate(layout: Layout): Layout {
         if (
@@ -563,21 +546,25 @@ export default class StatblockSettingTab extends PluginSettingTab {
     }
     buildCustomLayouts(
         layoutContainer: HTMLDivElement,
-        outerContainer: HTMLDivElement
+        outerContainer: HTMLDivElement,
+        manager: LayoutManager,
+        layouts: Layout[],
+        settingDefaultLayouts: Record<string, DefaultLayout>,
+        DefaultLayouts: Layout[],
     ) {
         layoutContainer.empty();
 
-        if (this.plugin.manager.getAllDefaultLayouts().some((f) => f.removed)) {
+        if (manager.getAllDefaultLayouts().some((f) => f.removed)) {
             new Setting(layoutContainer)
                 .setName("Restore Default Layouts")
                 .addButton((b) => {
                     b.setIcon("rotate-ccw").onClick(async () => {
                         for (const layout of Object.values(
-                            this.plugin.settings.statBlockLayoutSettings.defaultLayouts
+                            settingDefaultLayouts
                         )) {
                             layout.removed = false;
                             if (!layout.edited) {
-                                delete this.plugin.settings.statBlockLayoutSettings.defaultLayouts[
+                                delete settingDefaultLayouts[
                                     layout.id
                                 ];
                             }
@@ -587,7 +574,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
                     });
                 });
         }
-        for (const layout of this.plugin.manager.getAllDefaultLayouts()) {
+        for (const layout of manager.getAllDefaultLayouts()) {
             if (layout.removed) continue;
 
             const setting = new Setting(layoutContainer)
@@ -604,11 +591,11 @@ export default class StatblockSettingTab extends PluginSettingTab {
                                 if (!modal.saved) return;
 
                                 (modal.layout as DefaultLayout).edited = true;
-                                this.plugin.settings.statBlockLayoutSettings.defaultLayouts[layout.id] =
+                                settingDefaultLayouts[layout.id] =
                                     modal.layout;
 
                                 await this.plugin.saveSettings();
-                                this.plugin.manager.updateDefaultLayout(
+                                manager.updateDefaultLayout(
                                     layout.id,
                                     modal.layout
                                 );
@@ -623,9 +610,9 @@ export default class StatblockSettingTab extends PluginSettingTab {
                         const defLayout = DefaultLayouts.find(
                             ({ id }) => id == layout.id
                         )!;
-                        delete this.plugin.settings.statBlockLayoutSettings.defaultLayouts[layout.id];
+                        delete settingDefaultLayouts[layout.id];
                         await this.plugin.saveSettings();
-                        this.plugin.manager.updateDefaultLayout(
+                        manager.updateDefaultLayout(
                             layout.id,
                             defLayout
                         );
@@ -640,13 +627,17 @@ export default class StatblockSettingTab extends PluginSettingTab {
                         .setTooltip("Create Copy")
                         .onClick(async () => {
                             const dupe = this.getDuplicate(layout);
-                            this.plugin.settings.statBlockLayoutSettings.layouts.push(dupe);
+                            layouts.push(dupe);
                             await this.plugin.saveSettings();
-                            this.plugin.manager.addLayout(dupe);
+                            manager.addLayout(dupe);
 
                             this.buildCustomLayouts(
                                 layoutContainer,
-                                outerContainer
+                                outerContainer,
+                                manager,
+                                layouts,
+                                settingDefaultLayouts,
+                                DefaultLayouts
                             );
                         });
                 })
@@ -670,14 +661,14 @@ export default class StatblockSettingTab extends PluginSettingTab {
                         .setTooltip("Delete")
                         .onClick(async () => {
                             layout.removed = true;
-                            this.plugin.settings.statBlockLayoutSettings.defaultLayouts[layout.id] =
+                            settingDefaultLayouts[layout.id] =
                                 layout;
                             await this.plugin.saveSettings();
                             this.generateLayouts(outerContainer);
                         });
                 });
         }
-        for (const layout of this.plugin.settings.statBlockLayoutSettings.layouts) {
+        for (const layout of layouts) {
             new Setting(layoutContainer)
                 .setName(layout.name)
                 .addExtraButton((b) => {
@@ -698,8 +689,8 @@ export default class StatblockSettingTab extends PluginSettingTab {
                                     (modal.layout as DefaultLayout).edited =
                                         true;
                                 }
-                                this.plugin.settings.statBlockLayoutSettings.layouts.splice(
-                                    this.plugin.settings.statBlockLayoutSettings.layouts.indexOf(
+                                layouts.splice(
+                                    layouts.indexOf(
                                         layout
                                     ),
                                     1,
@@ -707,7 +698,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
                                 );
 
                                 await this.plugin.saveSettings();
-                                this.plugin.manager.updateLayout(
+                                manager.updateLayout(
                                     layout.id,
                                     modal.layout
                                 );
@@ -721,12 +712,16 @@ export default class StatblockSettingTab extends PluginSettingTab {
                         .setTooltip("Create Copy")
                         .onClick(async () => {
                             const dupe = this.getDuplicate(layout);
-                            this.plugin.settings.statBlockLayoutSettings.layouts.push(dupe);
+                            layouts.push(dupe);
                             await this.plugin.saveSettings();
-                            this.plugin.manager.addLayout(dupe);
+                            manager.addLayout(dupe);
                             this.buildCustomLayouts(
                                 layoutContainer,
-                                outerContainer
+                                outerContainer,
+                                manager,
+                                layouts,
+                                settingDefaultLayouts,
+                                DefaultLayouts
                             );
                         });
                 })
@@ -749,12 +744,12 @@ export default class StatblockSettingTab extends PluginSettingTab {
                     b.setIcon("trash")
                         .setTooltip("Delete")
                         .onClick(async () => {
-                            this.plugin.settings.statBlockLayoutSettings.layouts =
-                                this.plugin.settings.statBlockLayoutSettings.layouts.filter(
+                            layouts =
+                                layouts.filter(
                                     (l) => l.id !== layout.id
                                 );
                             await this.plugin.saveSettings();
-                            this.plugin.manager.removeLayout(layout.id);
+                            manager.removeLayout(layout.id);
 
                             this.generateLayouts(outerContainer);
                         });
@@ -800,7 +795,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
                     await this.plugin.saveMonsters(monsters);
                 }
                 this.display();
-            } catch (e) {}
+            } catch (e) { }
         };
 
         importAppFile.addButton((b) => {
@@ -835,7 +830,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
                     await this.plugin.saveMonsters(monsters);
                 }
                 this.display();
-            } catch (e) {}
+            } catch (e) { }
         };
 
         importImprovedInitiative.addButton((b) => {
@@ -870,7 +865,7 @@ export default class StatblockSettingTab extends PluginSettingTab {
                     await this.plugin.saveMonsters(monsters);
                 }
                 this.display();
-            } catch (e) {}
+            } catch (e) { }
         };
 
         importCritterDB.addButton((b) => {
@@ -1067,36 +1062,6 @@ export default class StatblockSettingTab extends PluginSettingTab {
             }
         });
     }
-    generateItems(containerEl: HTMLDivElement) {
-        containerEl.empty();
-        new Setting(containerEl).setHeading().setName("Itemary");
-        const additionalContainer = containerEl.createDiv(
-            "statblock-additional-container statblock-items"
-        );
-        new Setting(additionalContainer)
-            .setName("Add Item")
-            .addButton((b) => {
-                b.setIcon("plus-with-circle").onClick(() => {
-                    const modal = new EditItemModal(this.plugin);
-                    modal.onClose = () => {
-                        this.generateItems(containerEl);
-                    };
-                    modal.open();
-                });
-            });
-
-        const ancestor = this.containerEl.closest(".statblock-settings")!;
-        const { backgroundColor, paddingTop } = getComputedStyle(ancestor);
-
-        this.$UI = new Items({
-            target: additionalContainer,
-            props: {
-                plugin: this.plugin,
-                backgroundColor,
-                paddingTop
-            }
-        });
-    }
     override hide() {
         this.$UI.$destroy();
     }
@@ -1144,6 +1109,33 @@ class CreateStatblockModal extends FantasyStatblockModal {
     }
 }
 
+class ConfirmModal extends FantasyStatblockModal {
+    saved: boolean = false;
+    constructor(public filtered: number, plugin: StatBlockPlugin) {
+        super(plugin);
+    }
+    onOpen() {
+        this.titleEl.setText("Are you sure?");
+        this.contentEl.createEl("p", {
+            text: `This will delete ${this.filtered} creatures. This cannot be undone.`
+        });
+        new Setting(this.contentEl)
+            .setClass("no-border-top")
+            .addButton((b) => {
+                b.setIcon("checkmark")
+                    .setCta()
+                    .onClick(() => {
+                        this.saved = true;
+                        this.close();
+                    });
+            })
+            .addExtraButton((b) =>
+                b.setIcon("cross").onClick(() => {
+                    this.close();
+                })
+            );
+    }
+}
 async function confirm(plugin: StatBlockPlugin): Promise<boolean> {
     return new Promise((resolve, reject) => {
         try {

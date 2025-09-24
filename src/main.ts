@@ -1,8 +1,8 @@
 import {
     addIcon,
-    MarkdownPostProcessorContext,
+    type MarkdownPostProcessorContext,
     Notice,
-    ObsidianProtocolHandler,
+    type ObsidianProtocolHandler,
     parseYaml,
     Plugin,
     WorkspaceLeaf
@@ -11,7 +11,7 @@ import domtoimage from "dom-to-image";
 
 import StatBlockRenderer from "./view/statblock";
 import { nanoid } from "./util/util";
-import type { Monster, StatblockParameters } from "../index";
+import type { Item, ItemblockParameters, Monster, StatblockParameters } from "../index";
 import StatblockSettingTab from "./settings/settings";
 import fastCopy from "fast-copy";
 
@@ -22,27 +22,41 @@ import type {
     StatblockItem
 } from "./layouts/layout.types";
 import { Layout5e } from "./layouts/basic 5e/basic5e";
-import { StatblockSuggester } from "./suggest";
-import { DefaultLayouts } from "./layouts";
+import { StatblockSuggester } from "./suggest/statblocksuggester";
+import { DefaultLayouts, ItemDefaultLayouts } from "./layouts";
 import type { StatblockData } from "index";
 import LayoutManager from "./layouts/manager";
-import { CREATURE_VIEW, CreatureView } from "./combatant";
+import { CREATURE_VIEW, CreatureView, ITEMARY_VIEW, ItemaryView } from "./combatant";
 import { API } from "./api/api";
 import { Linkifier } from "./parser/linkify";
 import { Bestiary } from "./bestiary/bestiary";
 import { ExpectedValue } from "@javalent/dice-roller";
+import { Itemary } from "./itemary/itemary";
+import ItemBlockRenderer from "./view/itemblock";
+import { ItemAPI } from "./api/itemApi";
 
 export const DICE_ROLLER_SOURCE = "FANTASY_STATBLOCKS_PLUGIN";
 
 const DEFAULT_DATA: StatblockData = {
     monsters: [],
-    defaultLayouts: {},
-    layouts: [],
-    default: Layout5e.name,
+    items: [],
+    statBlockLayoutSettings: {
+        defaultLayouts: {},
+        layouts: [],
+        default: Layout5e.name,
+        showAdvanced: false,
+        alwaysImport: false,
+    },
+    itemBlockLayoutSettings: {
+        defaultLayouts: {},
+        layouts: [],
+        default: Layout5e.name,
+        showAdvanced: false,
+        alwaysImport: false,
+    },
     useDice: true,
     renderDice: false,
     export: true,
-    showAdvanced: false,
     version: {
         major: null,
         minor: null,
@@ -55,7 +69,6 @@ const DEFAULT_DATA: StatblockData = {
     debug: false,
     notifiedOfFantasy: false,
     hideConditionHelp: false,
-    alwaysImport: false,
     defaultLayoutsIntegrated: false,
     atomicWrite: false
 };
@@ -63,7 +76,9 @@ const DEFAULT_DATA: StatblockData = {
 export default class StatBlockPlugin extends Plugin {
     settings: StatblockData;
     manager = new LayoutManager();
+    itemManager = new LayoutManager();
     api: API = new API(this);
+    itemApi: ItemAPI = new ItemAPI(this)
 
     getRoller(str: string) {
         if (!this.canUseDiceRoller) return;
@@ -116,6 +131,35 @@ export default class StatBlockPlugin extends Plugin {
         return leaf.view as CreatureView;
     }
 
+    get item_view() {
+        const leaves = this.app.workspace.getLeavesOfType(ITEMARY_VIEW);
+        const leaf = leaves?.length ? leaves[0] : null;
+        if (leaf && leaf.view && leaf.view instanceof ItemaryView)
+            return leaf.view;
+    }
+    async openItemView(newPane: boolean = false) {
+        let leaf: WorkspaceLeaf;
+        const existing = this.app.workspace.getLeavesOfType(ITEMARY_VIEW);
+
+        if (!newPane && existing?.length) {
+            leaf = existing.shift();
+        } else {
+            if (newPane && existing?.length) {
+                leaf = this.app.workspace.createLeafInParent(
+                    existing[0].parent,
+                    existing[0].parent.children.length
+                );
+            } else {
+                leaf = this.app.workspace.getRightLeaf(true);
+            }
+            await leaf.setViewState({
+                type: ITEMARY_VIEW
+            });
+        }
+        this.app.workspace.revealLeaf(leaf);
+        return leaf.view as ItemaryView;
+    }
+
     #creaturePaneProtocolHandler: ObsidianProtocolHandler = (data) => {
         const name = data?.creature ?? data?.name ?? "";
 
@@ -128,6 +172,19 @@ export default class StatBlockPlugin extends Plugin {
             }
         }
     };
+
+    #itemPaneProtocolHandler: ObsidianProtocolHandler = (data) => {
+        const name = data?.item ?? data?.name ?? "";
+
+        if (Itemary.hasItem(name)) {
+            const item = Itemary.get(name);
+            if (!this.item_view) {
+                this.openItemView().then((v) => v.render(item));
+            } else {
+                this.item_view.render(item);
+            }
+        }
+    };
     async onload() {
         console.log("Fantasy StatBlocks loaded");
         this.app.workspace.trigger("fantasy-statblocks:loaded", null);
@@ -135,10 +192,13 @@ export default class StatBlockPlugin extends Plugin {
         await this.loadSettings();
         await this.saveSettings();
 
-        this.manager.initialize(this.settings);
+        this.manager.initialize(this.settings.statBlockLayoutSettings, DefaultLayouts);
+        this.itemManager.initialize(this.settings.itemBlockLayoutSettings, ItemDefaultLayouts);
         this.register(() => this.manager.unload());
+        this.register(() => this.itemManager.unload());
 
         Bestiary.initialize(this);
+        Itemary.initialize(this);
         Linkifier.initialize(this.app.metadataCache, this.app);
 
         this.register(() => Linkifier.unload());
@@ -194,6 +254,52 @@ export default class StatBlockPlugin extends Plugin {
             this.#creaturePaneProtocolHandler.bind(this)
         );
 
+        this.addCommand({
+            id: "open-item-view",
+            name: "Open Item pane",
+            checkCallback: (checking) => {
+                const existing =
+                    this.app.workspace.getLeavesOfType(ITEMARY_VIEW);
+                if (!existing.length) {
+                    if (!checking) {
+                        this.openItemView();
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
+        this.addCommand({
+            id: "reveal-item-view",
+            name: "Reveal Item pane",
+            checkCallback: (checking) => {
+                const existing =
+                    this.app.workspace.getLeavesOfType(ITEMARY_VIEW);
+                if (existing.length) {
+                    if (!checking) {
+                        this.openItemView();
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
+        this.addCommand({
+            id: "open-new-item-view",
+            name: "Open new Item pane",
+            callback: () => {
+                this.openItemView(true);
+            }
+        });
+        this.addRibbonIcon("sword", "Open Item pane", async (evt) => {
+            this.openItemView(evt.getModifierState("Meta"));
+        });
+
+        this.registerObsidianProtocolHandler(
+            "item-pane",
+            this.#itemPaneProtocolHandler.bind(this)
+        );
+
         addIcon(
             "markdown-icon",
             `<svg fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Pro 6.2.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2022 Fonticons, Inc. --><path d="M593.8 59.1H46.2C20.7 59.1 0 79.8 0 105.2v301.5c0 25.5 20.7 46.2 46.2 46.2h547.7c25.5 0 46.2-20.7 46.1-46.1V105.2c0-25.4-20.7-46.1-46.2-46.1zM338.5 360.6H277v-120l-61.5 76.9-61.5-76.9v120H92.3V151.4h61.5l61.5 76.9 61.5-76.9h61.5v209.2zm135.3 3.1L381.5 256H443V151.4h61.5V256H566z"/></svg>`
@@ -206,7 +312,12 @@ export default class StatBlockPlugin extends Plugin {
 
         this.registerMarkdownCodeBlockProcessor(
             "statblock",
-            this.postprocessor.bind(this)
+            this.statBlockPostprocessor.bind(this)
+        );
+
+        this.registerMarkdownCodeBlockProcessor(
+            "itemblock",
+            this.itemBlockPostprocessor.bind(this)
         );
 
         this.registerEditorSuggest(new StatblockSuggester(this));
@@ -215,6 +326,11 @@ export default class StatBlockPlugin extends Plugin {
             CREATURE_VIEW,
             (leaf: WorkspaceLeaf) => new CreatureView(leaf, this)
         );
+        this.registerView(
+            ITEMARY_VIEW,
+            (leaf: WorkspaceLeaf) => new ItemaryView(leaf, this)
+        );
+
         if (this.canUseDiceRoller) {
             window.DiceRoller.registerSource(DICE_ROLLER_SOURCE, {
                 showDice: true,
@@ -249,9 +365,17 @@ export default class StatBlockPlugin extends Plugin {
             for (const layout of this.settings.layouts) {
                 layout.id = nanoid();
             }
+            for (const layout of this.settings.itemLayouts) {
+                layout.id = nanoid();
+            }
             this.settings.default = (
-                this.layouts.find(
+                this.manager.getAllLayouts().find(
                     ({ name }) => name == this.settings.default
+                ) ?? Layout5e
+            ).id;
+            this.settings.itemDefault = (
+                this.itemManager.getAllLayouts().find(
+                    ({ name }) => name == this.settings.itemDefault
                 ) ?? Layout5e
             ).id;
 
@@ -267,10 +391,31 @@ export default class StatBlockPlugin extends Plugin {
             }
             this.settings.defaultLayouts = map;
         }
+        if (Array.isArray(this.settings.itemDefaultLayouts)) {
+            const map: Record<string, DefaultLayout> = {};
+            for (const layout of this.settings
+                .itemDefaultLayouts as DefaultLayout[]) {
+                if (layout.removed || layout.edited) {
+                    map[layout.id] = layout;
+                }
+            }
+            this.settings.itemDefaultLayouts = map;
+        }
         for (const layout of DefaultLayouts) {
             if (!(layout.id in this.settings.defaultLayouts)) continue;
             if (layout.version == null) continue;
             const existing = this.settings.defaultLayouts[layout.id];
+            if (existing.version >= layout.version) continue;
+            if (existing.edited) {
+                existing.updatable = true;
+                continue;
+            }
+            existing.blocks = fastCopy(layout.blocks);
+        }
+        for (const layout of ItemDefaultLayouts) {
+            if (!(layout.id in this.settings.itemDefaultLayouts)) continue;
+            if (layout.version == null) continue;
+            const existing = this.settings.itemDefaultLayouts[layout.id];
             if (existing.version >= layout.version) continue;
             if (existing.edited) {
                 existing.updatable = true;
@@ -312,26 +457,7 @@ export default class StatBlockPlugin extends Plugin {
         return (await super.loadData()) as StatblockData;
     }
     async saveData(settings: StatblockData) {
-        /* if (this.settings.atomicWrite) {
-            try {
-                await this.app.vault.adapter.write(
-                    `${this.manifest.dir}/temp.json`,
-                    JSON.stringify(settings, null, null)
-                );
-
-                await this.app.vault.adapter.remove(
-                    `${this.manifest.dir}/data.json`
-                );
-                await this.app.vault.adapter.rename(
-                    `${this.manifest.dir}/temp.json`,
-                    `${this.manifest.dir}/data.json`
-                );
-            } catch (e) {
-                super.saveData(settings);
-            }
-        } else { */
         super.saveData(settings);
-        /* } */
     }
 
     async saveMonster(monster: Monster, save: boolean = true) {
@@ -380,11 +506,61 @@ export default class StatBlockPlugin extends Plugin {
         await this.saveSettings();
     }
 
+    async saveItem(item: Item, save: boolean = true) {
+        if (!item.name) return;
+        if (Itemary.isLocal(item.name)) {
+            //already exists, replace it
+            const index = this.settings.items.findIndex(
+                ([name]) => name === item.name
+            );
+            if (index >= 0) {
+                this.settings.items.splice(index, 1, [
+                    item.name,
+                    item
+                ]);
+            } else {
+                this.settings.items.push([item.name, item]);
+            }
+        } else {
+            this.settings.items.push([item.name, item]);
+        }
+        Itemary.addLocalItem(item);
+
+        if (save) {
+            await this.saveSettings();
+        }
+    }
+    async saveItems(items: Item[]) {
+        for (let item of items) {
+            await this.saveItem(item, false);
+        }
+        await this.saveSettings();
+    }
+
+    async updateItem(oldItem: Item, newItem: Item) {
+        await this.deleteItems(oldItem.name);
+        await this.saveItem(newItem);
+    }
+
+    async deleteItems(...items: string[]) {
+        for (let item of items) {
+            Itemary.removeLocalItem(item);
+        }
+        this.settings.items = this.settings.items.filter(
+            ([name]) => !items.includes(name)
+        );
+        await this.saveSettings();
+    }
+
     onunload() {
         console.log("Fantasy StatBlocks unloaded");
 
         this.app.workspace
             .getLeavesOfType(CREATURE_VIEW)
+            .forEach((leaf) => leaf.detach());
+
+        this.app.workspace
+            .getLeavesOfType(ITEMARY_VIEW)
             .forEach((leaf) => leaf.detach());
     }
 
@@ -415,19 +591,16 @@ export default class StatBlockPlugin extends Plugin {
             });
     }
 
-    get layouts() {
-        return this.manager.getAllLayouts();
+    getLayoutOrDefault(object: Monster | Item): Layout | null {
+        if (object instanceof Monster) {
+            return this.manager.getLayoutOrDefault(object.layout);
+        } else if (object instanceof Item) {
+            return this.itemManager.getLayoutOrDefault(object.layout);
+        }
+        return null;
     }
 
-    get defaultLayout() {
-        return this.manager.getDefaultLayout();
-    }
-
-    getLayoutOrDefault(monster: Monster): Layout {
-        return this.manager.getLayoutOrDefault(monster.layout);
-    }
-
-    async postprocessor(
+    async statBlockPostprocessor(
         source: string,
         el: HTMLElement,
         ctx: MarkdownPostProcessorContext
@@ -456,12 +629,49 @@ export default class StatBlockPlugin extends Plugin {
             pre.setText(`\`\`\`statblock
 There was an error rendering the statblock:
 ${e.stack
-    .split("\n")
-    .filter((line: string) => !/^at/.test(line?.trim()))
-    .join("\n")}
+                    .split("\n")
+                    .filter((line: string) => !/^at/.test(line?.trim()))
+                    .join("\n")}
 \`\`\``);
         }
     }
+
+    async itemBlockPostprocessor(
+        source: string,
+        el: HTMLElement,
+        ctx: MarkdownPostProcessorContext
+    ) {
+        try {
+            /** Replace Links */
+            source = Linkifier.transformSource(source);
+
+            /** Get Parameters */
+            let params: ItemblockParameters = parseYaml(source);
+
+            el.addClass("statblock-plugin-container");
+            el.parentElement?.addClass("statblock-plugin-parent");
+
+            let itemblock = new ItemBlockRenderer({
+                container: el,
+                plugin: this,
+                params,
+                context: ctx.sourcePath
+            });
+
+            ctx.addChild(itemblock);
+        } catch (e) {
+            console.error(`Obsidian Itemblock Error:\n${e}`);
+            let pre = createEl("pre");
+            pre.setText(`\`\`\`statblock
+There was an error rendering the statblock:
+${e.stack
+                    .split("\n")
+                    .filter((line: string) => !/^at/.test(line?.trim()))
+                    .join("\n")}
+\`\`\``);
+        }
+    }
+
     //backwards-compat
     render(creature: HomebrewCreature, el: HTMLElement, display?: string) {
         this.api.render(creature, el, display);

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { Monster } from "index";
+    import type { Item, Monster } from "index";
     import type {
         TextItem,
         TraitsItem,
@@ -9,15 +9,15 @@
     import { stringify } from "src/util/util";
     import TextContent from "./TextContent.svelte";
 
-    export let monster: Monster;
+    export let source: Monster | Item;
     export let item: TraitsItem | TextItem | GroupItem | InlineItem;
 
     let header: string;
 
     if (item.headingProp) {
-        if (item.heading in monster) {
-            let monsterProp = stringify(monster[item.heading as keyof Monster]);
-            if (monsterProp.length) header = monsterProp;
+        if (item.heading in source) {
+            let targetProp = stringify(source[item.heading as keyof Monster|Item]);
+            if (targetProp.length) header = targetProp;
         }
     } else if (item.heading?.length) {
         header = item.heading;

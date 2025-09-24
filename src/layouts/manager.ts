@@ -5,7 +5,7 @@ import type {
     StatblockItem
 } from "src/layouts/layout.types";
 import { Layout5e } from "./basic 5e/basic5e";
-import type { StatblockData } from "index";
+import type { LayoutSettings } from "index";
 import {
     DefaultLayoutCSSProperties,
     ThemeMode,
@@ -14,10 +14,14 @@ import {
 import { DefaultLayouts } from ".";
 
 export default class LayoutManager {
-    public initialize(settings: StatblockData) {
-        this.setDefaultLayout(settings.default);
-        this.setDefaultLayouts(settings.defaultLayouts);
-        this.setLayouts(settings.layouts);
+    public layoutSettings: LayoutSettings;
+    defaultLayouts: Layout[];
+    public initialize(layoutSettings: LayoutSettings, defaultLayouts: Layout[]) {
+        this.layoutSettings = layoutSettings;
+        this.defaultLayouts = defaultLayouts;
+        this.setDefaultLayout(layoutSettings.default);
+        this.setDefaultLayouts(layoutSettings.defaultLayouts);
+        this.setLayouts(layoutSettings.layouts);
 
         for (const layout of this.getAllLayouts()) {
             this.addStyleSheet(layout);
@@ -127,7 +131,7 @@ export default class LayoutManager {
     }
 
     public setDefaultLayouts(layouts: Record<string, DefaultLayout>) {
-        for (const layout of DefaultLayouts) {
+        for (const layout of this.defaultLayouts) {
             this.#defaults.set(
                 layout.id,
                 layout.id in layouts ? layouts[layout.id] : layout

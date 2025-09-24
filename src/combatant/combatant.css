@@ -7,3 +7,13 @@
 .creature-view-top-pane input {
     width: 100%;
 }
+
+.item-view-container .item-view-top-pane {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.item-view-top-pane input {
+    width: 100%;
+}

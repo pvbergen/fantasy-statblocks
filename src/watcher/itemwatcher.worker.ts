@@ -1,4 +1,4 @@
-import type { Monster } from "index";
+import type { Item } from "index";
 import copy from "fast-copy";
 import type { CachedMetadata, FrontMatterInfo } from "obsidian";
 import { transformTraits } from "src/util/util";
@@ -15,7 +15,7 @@ interface IWorkerData {
     debug: boolean;
     queue: string[];
     file: {
-        statblock: "frontmatter" | "inline";
+        itemblock: "frontmatter" | "inline";
         content: string;
         info: FrontMatterInfo;
         file: FileDetails;
@@ -23,7 +23,7 @@ interface IWorkerData {
     get: string;
     done: string;
     update: {
-        monster: Monster;
+        item: Item;
         path: string;
     };
     save: void;
@@ -87,17 +87,17 @@ class Parser {
     processContent(content: string, file: FileDetails) {
         if (this.debug)
             console.debug(`Fantasy Statblocks: Process Content: ${file.path}`);
-        let statBlock = this.findFirstStatBlock(content);
-        if (statBlock) {
+        let itemBlock = this.findFirstStatBlock(content);
+        if (itemBlock) {
             if (this.debug)
                 console.debug(
                     `Fantasy Statblocks: found Statblock: ${JSON.stringify(
-                        statBlock
+                        itemBlock
                     )}`
                 );
 
-            const frontmatter = LinkStringifier.transformSource(statBlock);
-            const monster: Monster = Object.assign(
+            const frontmatter = LinkStringifier.transformSource(itemBlock);
+            const item: Item = Object.assign(
                 {},
                 YAML.parse(frontmatter),
                 {
@@ -105,14 +105,14 @@ class Parser {
                 }
             );
             if (this.debug)
-                console.debug(`Fantasy Statblocks: ${JSON.stringify(monster)}`);
-            this.processMonster(monster, file);
+                console.debug(`Fantasy Statblocks: ${JSON.stringify(item)}`);
+            this.processItem(item, file);
         }
     }
 
     findFirstStatBlock(content: string): string {
         let matches = content.match(
-            /^```[^\S\r\n]*statblock\s?\n([\s\S]+?)^```/m
+            /^```[^\S\r\n]*itemblock\s?\n([\s\S]+?)^```/m
         );
         if (matches) {
             return matches[1];
@@ -135,11 +135,11 @@ class Parser {
             }
             if (!event.data) continue;
 
-            const { file, statblock } = event.data;
+            const { file, itemblock } = event.data;
 
             try {
-                if (statblock === "inline") {
-                    //statblock codeblock
+                if (itemblock === "inline") {
+                    //itemblock codeblock
                     this.processContent(event.data.content, file);
                 } else {
                     //frontmatter
@@ -177,55 +177,55 @@ class Parser {
             info.frontmatter
         );
 
-        const monster: Monster = this.validate(
+        const item: Item = this.validate(
             Object.assign({}, copy(YAML.parse(frontmatter)), {
                 mtime: file.mtime
             })
         );
 
-        if (monster.traits) {
-            monster.traits = transformTraits([], monster.traits);
+        if (item.traits) {
+            item.traits = transformTraits([], item.traits);
         }
-        this.processMonster(monster, file);
+        this.processItem(item, file);
     }
 
-    private processMonster(monster: Monster, file: FileDetails) {
-        if (monster.actions) {
-            monster.actions = transformTraits([], monster.actions);
+    private processItem(item: Item, file: FileDetails) {
+        if (item.actions) {
+            item.actions = transformTraits([], item.actions);
         }
-        if (monster.bonus_actions) {
-            monster.bonus_actions = transformTraits([], monster.bonus_actions);
+        if (item.bonus_actions) {
+            item.bonus_actions = transformTraits([], item.bonus_actions);
         }
-        if (monster.reactions) {
-            monster.reactions = transformTraits([], monster.reactions);
+        if (item.reactions) {
+            item.reactions = transformTraits([], item.reactions);
         }
-        if (monster.legendary_actions) {
-            monster.legendary_actions = transformTraits(
+        if (item.legendary_actions) {
+            item.legendary_actions = transformTraits(
                 [],
-                monster.legendary_actions
+                item.legendary_actions
             );
         }
         if (
-            monster["statblock-link"] &&
-            monster["statblock-link"].startsWith("#")
+            item["itemblock-link"] &&
+            item["itemblock-link"].startsWith("#")
         ) {
-            monster[
-                "statblock-link"
-            ] = `[${monster.name}](${file.path}${monster["statblock-link"]})`;
+            item[
+                "itemblock-link"
+            ] = `[${item.name}](${file.path}${item["itemblock-link"]})`;
         }
 
         if (this.debug)
             console.debug(
-                `Fantasy Statblocks: Adding ${monster.name} to bestiary from ${file.basename}`
+                `Fantasy Statblocks: Adding ${item.name} to bestiary from ${file.basename}`
             );
 
         ctx.postMessage<UpdateEventMessage>({
             type: "update",
-            data: { monster, path: file.path }
+            data: { item, path: file.path }
         });
     }
-    validate(draft: Partial<Monster>): Monster {
-        return draft as Monster;
+    validate(draft: Partial<Item>): Item {
+        return draft as Item;
     }
 }
 new Parser();

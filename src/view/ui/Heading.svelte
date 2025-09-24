@@ -1,39 +1,39 @@
 <script lang="ts">
-    import type { Monster } from "index";
+    import type { Monster, Item } from "index";
     import type { HeadingItem } from "src/layouts/layout.types";
     import { stringify } from "src/util/util";
     import TextContent from "./TextContent.svelte";
 
-    export let monster: Monster;
+    export let source: Monster|Item;
     export let item: HeadingItem;
 </script>
 
 <div class="flex-container">
     {#each item.properties as property}
-        {#if property in monster}
+        {#if property in source}
             {#if !item.size || item.size == 1}
                 <h1 class="heading statblock-heading {stringify(property)}">
-                    <TextContent textToRender={stringify(monster[property])} />
+                    <TextContent textToRender={stringify(source[property])} />
                 </h1>
             {:else if item.size == 2}
                 <h2 class="heading statblock-heading {stringify(property)}">
-                    <TextContent textToRender={stringify(monster[property])} />
+                    <TextContent textToRender={stringify(source[property])} />
                 </h2>
             {:else if item.size == 3}
                 <h3 class="heading statblock-heading {stringify(property)}">
-                    <TextContent textToRender={stringify(monster[property])} />
+                    <TextContent textToRender={stringify(source[property])} />
                 </h3>
             {:else if item.size == 4}
                 <h4 class="heading statblock-heading {stringify(property)}">
-                    <TextContent textToRender={stringify(monster[property])} />
+                    <TextContent textToRender={stringify(source[property])} />
                 </h4>
             {:else if item.size == 5}
                 <h5 class="heading statblock-heading {stringify(property)}">
-                    <TextContent textToRender={stringify(monster[property])} />
+                    <TextContent textToRender={stringify(source[property])} />
                 </h5>
             {:else}
                 <h6 class="heading statblock-heading {stringify(property)}">
-                    <TextContent textToRender={stringify(monster[property])} />
+                    <TextContent textToRender={stringify(source[property])} />
                 </h6>
             {/if}
         {/if}

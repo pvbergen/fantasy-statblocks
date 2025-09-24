@@ -3,7 +3,7 @@
     import { slugify } from "src/util/util";
 
     import TextContentHolder from "./TextContentHolder.svelte";
-    import type { Monster, Trait } from "index";
+    import type { Item, Monster, Trait } from "index";
     import { Notice } from "obsidian";
 
     export let trait: Trait;
@@ -12,13 +12,13 @@
     export let desc: string;
     export let property: string = "";
     export let item: TraitsItem | SpellsItem;
-    export let monster: Monster;
+    export let source: Monster | Item;
     if (item.callback) {
         try {
             const frame = document.body.createEl("iframe");
             const funct = (frame.contentWindow as any).Function;
-            const func = new funct("monster", "property", item.callback);
-            desc = func.call(undefined, monster, trait) ?? desc;
+            const func = new funct("source", "property", item.callback);
+            desc = func.call(undefined, source, trait) ?? desc;
             document.body.removeChild(frame);
         } catch (e) {
             new Notice(

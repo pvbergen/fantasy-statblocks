@@ -1,22 +1,22 @@
 <script lang="ts">
-    import type { Monster } from "../../../index";
+    import type { Item, Monster } from "../../../index";
     import { Notice } from "obsidian";
     import type { PropertyItem } from "../../layouts/layout.types";
     import { slugify, stringify } from "../../util/util";
     import TextContentHolder from "./TextContentHolder.svelte";
 
-    export let monster: Monster;
+    export let source: Monster | Item;
     export let item: PropertyItem;
 
-    let property = stringify(monster[item.properties[0]], 0, ", ", false);
+    let property = stringify(source[item.properties[0]], 0, ", ", false);
     let display = item.display ?? item.properties[0];
 
     if (item.callback) {
         try {
             const frame = document.body.createEl("iframe");
             const funct = (frame.contentWindow as any).Function;
-            const func = new funct("monster", item.callback);
-            property = func.call(undefined, monster) ?? property;
+            const func = new funct("source", item.callback);
+            property = func.call(undefined, source) ?? property;
             document.body.removeChild(frame);
         } catch (e) {
             new Notice(

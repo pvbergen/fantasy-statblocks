@@ -17,8 +17,8 @@ import FSWorker, {
     UpdateEventMessage,
     SaveMessage,
     DebugMessage
-} from "./watcher.worker";
-import { Bestiary } from "src/bestiary/bestiary";
+} from "./itemwatcher.worker";
+import { Itemary } from "src/itemary/itemary";
 
 declare global {
     interface Worker {
@@ -26,7 +26,7 @@ declare global {
     }
 }
 
-class WatcherClass extends Component {
+class ItemWatcherClass extends Component {
     announce: boolean;
     plugin: StatBlockPlugin;
     get metadataCache() {
@@ -63,7 +63,7 @@ class WatcherClass extends Component {
                 if (!this.plugin.settings.autoParse) return;
                 const { frontmatter } =
                     this.metadataCache.getFileCache(file) ?? {};
-                if (!frontmatter || !frontmatter.statblock) {
+                if (!frontmatter || !frontmatter.itemblock) {
                     if (this.watchPaths.has(file.path)) {
                         this.delete(file.path);
                     }
@@ -143,20 +143,20 @@ class WatcherClass extends Component {
                 "message",
                 async (evt: MessageEvent<UpdateEventMessage>) => {
                     if (evt.data.type == "update") {
-                        let { monster, path } = evt.data.data;
+                        let { item, path } = evt.data.data;
 
-                        let update = Bestiary.hasCreature(monster.name);
-                        monster.path = path;
+                        let update = Itemary.hasItem(item.name);
+                        item.path = path;
 
-                        Bestiary.addEphemeralCreature(monster);
+                        Itemary.addEphemeralItem(item);
 
-                        this.watchPaths.set(path, monster.name);
+                        this.watchPaths.set(path, item.name);
 
                         if (this.plugin.settings.debug)
                             console.debug(
                                 `Fantasy Statblocks: ${
                                     update ? "Updated" : "Added"
-                                } ${monster.name}`
+                                } ${item.name}`
                             );
                     }
                 }
@@ -175,7 +175,7 @@ class WatcherClass extends Component {
 
         this.plugin.app.workspace.onLayoutReady(() => {
             if (!this.plugin.settings.autoParse) {
-                Bestiary.setResolved(true);
+                Itemary.setResolved(true);
                 return;
             }
             this.start(true);
@@ -197,10 +197,10 @@ class WatcherClass extends Component {
             new Notice("Fantasy Statblocks: Frontmatter Parsing complete.");
             this.announce = false;
         }
-        Bestiary.setResolved(true);
+        Itemary.setResolved(true);
     }
     async delete(path: string) {
-        Bestiary.removeEphemeralCreature(this.watchPaths.get(path));
+        Itemary.removeEphemeralItem(this.watchPaths.get(path));
         this.watchPaths.delete(path);
         if (this.plugin.settings.debug)
             console.debug(
@@ -209,7 +209,7 @@ class WatcherClass extends Component {
     }
     startTime: number;
     start(announce = false) {
-        Bestiary.setResolved(false);
+        Itemary.setResolved(false);
         this.announce = announce;
         this.startTime = Date.now();
         console.info("Fantasy Statblocks: Starting Frontmatter Parsing.");
@@ -262,17 +262,17 @@ class WatcherClass extends Component {
     }
     async getFileInformation(file: TFile): Promise<FileCacheMessage | null> {
         if (this.watchPaths.has(file.path)) {
-            const monster = Bestiary.get(this.watchPaths.get(file.path));
+            const item = Itemary.get(this.watchPaths.get(file.path));
 
-            if (monster?.mtime == file.stat.mtime) return null;
+            if (item?.mtime == file.stat.mtime) return null;
         }
 
         const cache = this.plugin.app.metadataCache.getFileCache(file);
-        if (!cache?.frontmatter?.statblock) return null;
+        if (!cache?.frontmatter?.itemblock) return null;
         if (
-            cache?.frontmatter?.statblock !== true &&
-            cache?.frontmatter?.statblock !== "true" &&
-            cache?.frontmatter?.statblock !== "inline"
+            cache?.frontmatter?.itemblock !== true &&
+            cache?.frontmatter?.itemblock !== "true" &&
+            cache?.frontmatter?.itemblock !== "inline"
         )
             return null;
         const content = await this.plugin.app.vault.cachedRead(file);
@@ -281,8 +281,8 @@ class WatcherClass extends Component {
         return {
             type: "file",
             data: {
-                statblock:
-                    cache.frontmatter.statblock == "inline"
+                itemblock:
+                    cache.frontmatter.itemblock == "inline"
                         ? "inline"
                         : "frontmatter",
                 content,
@@ -318,4 +318,4 @@ class WatcherClass extends Component {
     }
 }
 
-export const Watcher = new WatcherClass();
+export const ItemWatcher = new ItemWatcherClass();

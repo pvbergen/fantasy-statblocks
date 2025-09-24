@@ -112,6 +112,44 @@ export interface Monster {
     [key: string]: any;
 }
 
+export interface Item {
+    image?: string;
+    name: string;
+    size?: string;
+    type: string;
+
+    /** Statblock Parameters */
+    export?: boolean;
+    dice?: boolean;
+    render?: boolean;
+    layout?: string;
+    statblock?: string;
+    columns?: number;
+    columnWidth?: number;
+    columnHeight?: number;
+    forceColumns?: boolean;
+
+    note?: string;
+    path?: string;
+    mtime?: number;
+
+    /* Extensions */
+    item?: string;
+    extends?: string | string[];
+    itemary: boolean;
+
+    [key: string]: any;
+}
+
+export interface ItemblockParameters
+    extends Omit<
+        Item,
+        | "traits"
+    > {
+    traits?: { desc: string; name: string }[];
+    feature?: Trait[];
+}
+
 export interface StatblockParameters
     extends Omit<
         Monster,
@@ -139,13 +177,12 @@ export interface Trait {
 
 export interface StatblockData {
     monsters: Array<[string, Monster]>;
-    defaultLayouts: Record<string, DefaultLayout>;
-    layouts: Layout[];
-    default: string;
+    items: Array<[string, Item]>;
+    statBlockLayoutSettings: LayoutSettings;
+    itemBlockLayoutSettings: LayoutSettings;
     useDice: boolean;
     renderDice: boolean;
     export: boolean;
-    showAdvanced: boolean;
     version: {
         major: number;
         minor: number;
@@ -158,9 +195,16 @@ export interface StatblockData {
     debug: boolean;
     notifiedOfFantasy: boolean;
     hideConditionHelp: boolean;
-    alwaysImport: boolean;
     defaultLayoutsIntegrated: boolean;
     atomicWrite: boolean;
+}
+
+export interface LayoutSettings {
+    defaultLayouts: Record<string, DefaultLayout>;
+    layouts: Layout[];
+    default: string;
+    showAdvanced: boolean;
+    alwaysImport: boolean;
 }
 
 declare global {

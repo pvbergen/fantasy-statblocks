@@ -1,64 +1,64 @@
 import fastCopy from "fast-copy";
-import type { Monster } from "index";
+import type { Item } from "index";
 import type StatBlockPlugin from "src/main";
-import { MonsterWatcher } from "src/watcher/monsterwatcher";
-import { BESTIARY_BY_NAME } from "./srd-bestiary";
+import { ItemWatcher } from "src/watcher/itemwatcher";
 import { stringify } from "src/util/util";
 import type { EventRef, Events, Workspace } from "obsidian";
+import { ITEMARY_BY_NAME } from "./srd-itemary";
 
 declare module "obsidian" {
     interface Workspace {
-        trigger(name: "fantasy-statblocks:bestiary:resolved"): void;
-        trigger(name: "fantasy-statblocks:bestiary:updated"): void;
+        trigger(name: "fantasy-statblocks:itemary:resolved"): void;
+        trigger(name: "fantasy-statblocks:itemary:updated"): void;
         trigger(
-            name: "fantasy-statblocks:bestiary:creature-added",
-            creature: Monster
+            name: "fantasy-statblocks:itemary:item-added",
+            item: Item
         ): void;
         trigger<T extends string>(
-            name: `fantasy-statblocks:bestiary:indexed:${T}`
+            name: `fantasy-statblocks:itemary:indexed:${T}`
         ): void;
         trigger<T extends string>(
-            name: `fantasy-statblocks:bestiary:sorted:${T}`,
-            values: Array<Monster>
+            name: `fantasy-statblocks:itemary:sorted:${T}`,
+            values: Array<Item>
         ): void;
         on(
-            name: `fantasy-statblocks:bestiary:creature-added`,
-            callback: (creature: Monster) => void
+            name: `fantasy-statblocks:itemary:item-added`,
+            callback: (item: Item) => void
         ): EventRef;
         on<T extends string>(
-            name: `fantasy-statblocks:bestiary:indexed:${T}`,
+            name: `fantasy-statblocks:itemary:indexed:${T}`,
             callback: () => void
         ): EventRef;
         on<T extends string>(
-            name: `fantasy-statblocks:bestiary:sorted:${T}`,
-            callback: (values: Array<Monster>) => void
+            name: `fantasy-statblocks:itemary:sorted:${T}`,
+            callback: (values: Array<Item>) => void
         ): EventRef;
     }
 }
 
-class BestiaryClass {
-    #bestiary: Map<string, Monster> = new Map();
-    #local: Map<string, Monster> = new Map();
-    #ephemeral: Map<string, Monster> = new Map();
+class ItemaryClass {
+    #itemary: Map<string, Item> = new Map();
+    #local: Map<string, Item> = new Map();
+    #ephemeral: Map<string, Item> = new Map();
 
     #resolved = false;
 
-    enableSRD: boolean;
-
     #indices: Map<string, Map<string, Set<string>>> = new Map();
 
-    #sorters: Map<string, (a: Monster, b: Monster) => number> = new Map();
-    #sorted: Map<string, Array<Monster>> = new Map();
+    #sorters: Map<string, (a: Item, b: Item) => number> = new Map();
+    #sorted: Map<string, Array<Item>> = new Map();
 
-    getSortedBy(field: string): Array<Monster> {
+    enableSRD: boolean;
+
+    getSortedBy(field: string): Array<Item> {
         return this.#sorted.get(field) ?? [];
     }
     onSortedBy(
         field: string,
-        cb: (values: Array<Monster>) => void
+        cb: (values: Array<Item>) => void
     ): () => void {
         let ref = this.#events.on(
-            `fantasy-statblocks:bestiary:sorted:${field}`,
+            `fantasy-statblocks:itemary:sorted:${field}`,
             (values) => cb(values)
         );
 
@@ -69,7 +69,7 @@ class BestiaryClass {
 
     registerSorter(
         field: string,
-        compareFn: (a: Monster, b: Monster) => number
+        compareFn: (a: Item, b: Item) => number
     ) {
         if (!this.#sorters.has(field)) {
             this.#sorters.set(field, compareFn);
@@ -85,12 +85,12 @@ class BestiaryClass {
                 : [...this.#sorters.keys()]) {
                 this.#sorted.set(
                     field,
-                    this.getBestiaryCreatures().sort((a, b) =>
+                    this.getItemaryItems().sort((a, b) =>
                         this.#sorters.get(field)(a, b)
                     )
                 );
                 this.#events.trigger(
-                    `fantasy-statblocks:bestiary:sorted:${field}`,
+                    `fantasy-statblocks:itemary:sorted:${field}`,
                     this.getSortedBy(field)
                 );
             }
@@ -111,7 +111,7 @@ class BestiaryClass {
     onIndexUpdated(index: string, callback: () => void): () => void {
         if (!this.#indices.has(index)) return () => {};
         let ref: EventRef = this.#events.on(
-            `fantasy-statblocks:bestiary:indexed:${index}`,
+            `fantasy-statblocks:itemary:indexed:${index}`,
             () => callback()
         );
 
@@ -126,27 +126,27 @@ class BestiaryClass {
 
         this.#events = plugin.app.workspace;
 
-        MonsterWatcher.initialize(plugin).load();
+        ItemWatcher.initialize(plugin).load();
 
         plugin.addCommand({
             id: "parse-frontmatter",
-            name: "Parse Frontmatter for Creatures",
+            name: "Parse Frontmatter for Items",
             callback: () => {
-                MonsterWatcher.start(true);
+                ItemWatcher.start(true);
             }
         });
-        plugin.register(() => MonsterWatcher.unload());
+        plugin.register(() => ItemWatcher.unload());
 
         plugin.registerEvent(
             plugin.app.workspace.on("fantasy-statblocks:srd-change", (srd) => {
                 this.enableSRD = srd;
                 if (srd) {
-                    this.#bestiary = new Map([
-                        ...BESTIARY_BY_NAME,
-                        ...this.#bestiary
+                    this.#itemary = new Map([
+                        ...ITEMARY_BY_NAME,
+                        ...this.#itemary
                     ]);
                 } else {
-                    this.#bestiary = new Map([
+                    this.#itemary = new Map([
                         ...this.#local,
                         ...this.#ephemeral
                     ]);
@@ -155,55 +155,55 @@ class BestiaryClass {
         );
         this.enableSRD = !plugin.settings.disableSRD;
         if (this.enableSRD) {
-            this.#bestiary = new Map(BESTIARY_BY_NAME);
+            this.#itemary = new Map(ITEMARY_BY_NAME);
         }
-        for (const [, creature] of plugin.settings.monsters) {
-            this.addLocalCreature(creature);
+        for (const [, item] of plugin.settings.items) {
+            this.addLocalItem(item);
         }
     }
 
-    #addToIndex(creature: Monster) {
+    #addToIndex(item: Item) {
         setTimeout(() => {
             for (const [field, map] of this.#indices) {
-                if (field in creature) {
+                if (field in item) {
                     let values = [];
-                    if (Array.isArray(creature[field as keyof Monster])) {
-                        for (const _v of creature[
-                            field as keyof Monster
+                    if (Array.isArray(item[field as keyof Item])) {
+                        for (const _v of item[
+                            field as keyof Item
                         ] as Array<any>) {
                             values.push(stringify(_v));
                         }
                     } else {
                         values.push(
-                            stringify(creature[field as keyof Monster])
+                            stringify(item[field as keyof Item])
                         );
                     }
 
                     for (const value of values) {
                         if (!map.has(value)) {
-                            map.set(value, new Set([creature.name]));
+                            map.set(value, new Set([item.name]));
                         } else {
-                            map.get(value).add(creature.name);
+                            map.get(value).add(item.name);
                         }
                     }
 
                     this.#events.trigger(
-                        `fantasy-statblocks:bestiary:indexed:${field}`
+                        `fantasy-statblocks:itemary:indexed:${field}`
                     );
                 }
             }
         }, 0);
     }
-    #removeFromIndex(creature: Monster) {
+    #removeFromIndex(item: Item) {
         setTimeout(() => {
             for (const [field, map] of this.#indices) {
-                if (field in creature) {
-                    const value = stringify(creature[field as keyof Monster]);
+                if (field in item) {
+                    const value = stringify(item[field as keyof Item]);
                     if (map.has(value)) {
-                        map.get(value).delete(creature.name);
+                        map.get(value).delete(item.name);
                     }
                     this.#events.trigger(
-                        `fantasy-statblocks:bestiary:indexed:${field}`
+                        `fantasy-statblocks:itemary:indexed:${field}`
                     );
                 }
             }
@@ -219,60 +219,60 @@ class BestiaryClass {
     isLocal(name: string) {
         return (
             this.#local.has(name) &&
-            this.#bestiary.get(name) === this.#local.get(name)
+            this.#itemary.get(name) === this.#local.get(name)
         );
     }
-    addLocalCreature(creature: Monster) {
-        if (!creature.name) return;
-        this.#local.set(creature.name, creature);
-        this.#bestiary.set(creature.name, creature);
-        this.#addToIndex(creature);
+    addLocalItem(item: Item) {
+        if (!item.name) return;
+        this.#local.set(item.name, item);
+        this.#itemary.set(item.name, item);
+        this.#addToIndex(item);
         this.#triggerUpdatedCallbacks();
         this.#triggerSort();
     }
-    removeLocalCreature(name: string) {
+    removeLocalItem(name: string) {
         if (
-            this.#bestiary.has(name) &&
-            this.#bestiary.get(name) === this.#local.get(name)
+            this.#itemary.has(name) &&
+            this.#itemary.get(name) === this.#local.get(name)
         ) {
-            this.#bestiary.delete(name);
+            this.#itemary.delete(name);
         }
         this.#removeFromIndex(this.#local.get(name));
         this.#local.delete(name);
         if (this.#ephemeral.has(name)) {
-            this.#bestiary.set(name, this.#ephemeral.get(name));
-        } else if (this.enableSRD && BESTIARY_BY_NAME.has(name)) {
-            this.#bestiary.set(name, BESTIARY_BY_NAME.get(name));
+            this.#itemary.set(name, this.#ephemeral.get(name));
+        } else if (this.enableSRD && ITEMARY_BY_NAME.has(name)) {
+            this.#itemary.set(name, ITEMARY_BY_NAME.get(name));
         }
         this.#triggerUpdatedCallbacks();
         this.#triggerSort();
     }
-    addEphemeralCreature(creature: Monster) {
-        if (!creature.name) return;
-        this.#ephemeral.set(creature.name, creature);
-        this.#bestiary.set(creature.name, creature);
+    addEphemeralItem(item: Item) {
+        if (!item.name) return;
+        this.#ephemeral.set(item.name, item);
+        this.#itemary.set(item.name, item);
         this.#events.trigger(
-            "fantasy-statblocks:bestiary:creature-added",
-            creature
+            "fantasy-statblocks:itemary:item-added",
+            item
         );
-        this.#addToIndex(creature);
+        this.#addToIndex(item);
         this.#triggerSort();
         this.#triggerUpdatedCallbacks();
     }
-    removeEphemeralCreature(name: string) {
-        this.#removeFromIndex(this.#bestiary.get(name));
-        this.#bestiary.delete(name);
+    removeEphemeralItem(name: string) {
+        this.#removeFromIndex(this.#itemary.get(name));
+        this.#itemary.delete(name);
         this.#ephemeral.delete(name);
         this.#triggerUpdatedCallbacks();
         this.#triggerSort();
     }
 
-    removeCreatures(...names: string[]) {
+    removeItems(...names: string[]) {
         for (const name of names) {
             if (this.isLocal(name)) {
-                this.removeLocalCreature(name);
+                this.removeLocalItem(name);
             } else {
-                this.removeEphemeralCreature(name);
+                this.removeEphemeralItem(name);
             }
         }
     }
@@ -283,7 +283,7 @@ class BestiaryClass {
     setResolved(resolved: boolean) {
         this.#resolved = resolved;
         if (resolved) {
-            this.#events.trigger("fantasy-statblocks:bestiary:resolved");
+            this.#events.trigger("fantasy-statblocks:itemary:resolved");
 
             this.#triggerUpdatedCallbacks();
             this.#triggerSort();
@@ -295,7 +295,7 @@ class BestiaryClass {
         if (this.isResolved()) {
             callback();
         } else {
-            ref = this.#events.on("fantasy-statblocks:bestiary:resolved", () =>
+            ref = this.#events.on("fantasy-statblocks:itemary:resolved", () =>
                 callback()
             );
         }
@@ -309,7 +309,7 @@ class BestiaryClass {
         if (this.isResolved()) {
             callback();
         } else {
-            ref = this.#events.on("fantasy-statblocks:bestiary:updated", () =>
+            ref = this.#events.on("fantasy-statblocks:itemary:updated", () =>
                 callback()
             );
         }
@@ -321,65 +321,65 @@ class BestiaryClass {
 
     #triggerUpdatedCallbacks() {
         if (this.isResolved()) {
-            this.#events.trigger("fantasy-statblocks:bestiary:updated");
+            this.#events.trigger("fantasy-statblocks:itemary:updated");
         }
     }
     size() {
-        return this.#bestiary.size;
+        return this.#itemary.size;
     }
 
     /**
-     * Get the fully defined plugin bestiary.
+     * Get the fully defined plugin itemary.
      *
-     * @returns {Map<string, Monster>}
+     * @returns {Map<string, Item>}
      */
-    getBestiary() {
-        return this.#bestiary;
+    getItemary() {
+        return this.#itemary;
     }
 
     /**
-     * Get a list of bestiary creatures.
+     * Get a list of itemary items.
      *
-     * @returns {Monster[]}
+     * @returns {Item[]}
      */
-    getBestiaryCreatures(): Monster[] {
-        return Array.from(this.#bestiary.values());
+    getItemaryItems(): Item[] {
+        return Array.from(this.#itemary.values());
     }
 
     /**
-     * Get a list of bestiary names.
+     * Get a list of itemary names.
      *
      * @returns {string[]}
      */
-    getBestiaryNames(): string[] {
-        return Array.from(this.#bestiary.keys()).sort();
+    getItemaryNames(): string[] {
+        return Array.from(this.#itemary.keys()).sort();
     }
 
     /**
-     * Returns true if the bestiary contains the creature.
+     * Returns true if the itemary contains the item.
      *
      * @param {string} name
      * @returns {boolean}
      */
-    hasCreature(name: string): boolean {
-        return this.#bestiary.has(name);
+    hasItem(name: string): boolean {
+        return this.#itemary.has(name);
     }
     getExtensions(
-        creature: Partial<Monster>,
+        item: Partial<Item>,
         extended: Set<string>
-    ): Partial<Monster>[] {
-        let extensions: Partial<Monster>[] = [fastCopy(creature)];
+    ): Partial<Item>[] {
+        let extensions: Partial<Item>[] = [fastCopy(item)];
         if (
-            !("extends" in creature) ||
+            !("extends" in item) ||
             !(
-                Array.isArray(creature.extends) ||
-                typeof creature.extends == "string"
+                Array.isArray(item.extends) ||
+                typeof item.extends == "string"
             )
         ) {
             return extensions;
         }
-        if (creature.extends && creature.extends.length) {
-            for (const extension of [creature.extends].flat()) {
+        if (item.extends && item.extends.length) {
+            for (const extension of [item.extends].flat()) {
                 if (extended.has(extension)) {
                     console.info(
                         "Circular extend dependency detected in " +
@@ -387,11 +387,11 @@ class BestiaryClass {
                     );
                     continue;
                 }
-                extended.add(creature.name);
-                const extensionMonster = this.#bestiary.get(extension);
-                if (!extensionMonster) continue;
+                extended.add(item.name);
+                const extensionItem = this.#itemary.get(extension);
+                if (!extensionItem) continue;
                 extensions.push(
-                    ...this.getExtensions(extensionMonster, extended)
+                    ...this.getExtensions(extensionItem, extended)
                 );
             }
         }
@@ -399,21 +399,21 @@ class BestiaryClass {
         return extensions;
     }
     getExtensionNames(
-        creature: Partial<Monster>,
+        item: Partial<Item>,
         extended: Set<string>
     ): string[] {
-        let extensions: string[] = [creature.name];
+        let extensions: string[] = [item.name];
         if (
-            !("extends" in creature) ||
+            !("extends" in item) ||
             !(
-                Array.isArray(creature.extends) ||
-                typeof creature.extends == "string"
+                Array.isArray(item.extends) ||
+                typeof item.extends == "string"
             )
         ) {
             return extensions;
         }
-        if (creature.extends && creature.extends.length) {
-            for (const extension of [creature.extends].flat()) {
+        if (item.extends && item.extends.length) {
+            for (const extension of [item.extends].flat()) {
                 if (extended.has(extension)) {
                     console.info(
                         "Circular extend dependency detected in " +
@@ -421,11 +421,11 @@ class BestiaryClass {
                     );
                     continue;
                 }
-                extended.add(creature.name);
-                const extensionMonster = this.#bestiary.get(extension);
-                if (!extensionMonster) continue;
+                extended.add(item.name);
+                const extensionItem = this.#itemary.get(extension);
+                if (!extensionItem) continue;
                 extensions.push(
-                    ...this.getExtensionNames(extensionMonster, extended)
+                    ...this.getExtensionNames(extensionItem, extended)
                 );
             }
         }
@@ -434,50 +434,50 @@ class BestiaryClass {
     }
 
     /**
-     * Retrieve a fully defined creature out of the bestiary, resolving all extensions.
+     * Retrieve a fully defined item out of the itemary, resolving all extensions.
      *
-     * @param {string} name Name of the creature to retrieve.
-     * @returns {Partial<Monster> | null} The creature from the bestiary, or null if not present.
+     * @param {string} name Name of the item to retrieve.
+     * @returns {Partial<Item> | null} The item from the itemary, or null if not present.
      */
-    async getCreatureFromBestiary(
+    async getItemFromItemary(
         name: string
-    ): Promise<Partial<Monster> | null> {
+    ): Promise<Partial<Item> | null> {
         return new Promise((resolve) => {
             this.onResolved(() => {
-                if (!this.hasCreature(name)) resolve(null);
-                let creature = this.#bestiary.get(name);
+                if (!this.hasItem(name)) resolve(null);
+                let item = this.#itemary.get(name);
                 resolve(
                     Object.assign(
                         {},
-                        ...this.getExtensions(creature, new Set(creature.name)),
-                        creature
-                    ) as Monster
+                        ...this.getExtensions(item, new Set(item.name)),
+                        item
+                    ) as Item
                 );
             });
         });
     }
     /**
-     * Retrieve a fully defined creature out of the bestiary, resolving all extensions.
+     * Retrieve a fully defined item out of the itemary, resolving all extensions.
      *
      * @param {string} name Name of the creautre to retrieve.
-     * @returns {Partial<Monster> | null} The creature from the bestiary, or null if not present.
+     * @returns {Partial<Item> | null} The item from the itemary, or null if not present.
      */
-    getCreatureFromBestiarySync(name: string): Partial<Monster> | null {
+    getItemFromItemarySync(name: string): Partial<Item> | null {
         if (!this.isResolved())
-            throw new Error("The bestiary is not fully resolved.");
-        if (!this.hasCreature(name)) return null;
-        let creature = this.#bestiary.get(name);
+            throw new Error("The itemary is not fully resolved.");
+        if (!this.hasItem(name)) return null;
+        let item = this.#itemary.get(name);
         return Object.assign(
             {},
-            ...this.getExtensions(creature, new Set(creature.name)),
-            creature
-        ) as Monster;
+            ...this.getExtensions(item, new Set(item.name)),
+            item
+        ) as Item;
     }
 
     //temp
     get(name: string) {
-        return this.#bestiary.get(name);
+        return this.#itemary.get(name);
     }
 }
 
-export const Bestiary = new BestiaryClass();
+export const Itemary = new ItemaryClass();
