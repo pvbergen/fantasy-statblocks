@@ -129,7 +129,7 @@ class ItemaryClass {
         ItemWatcher.initialize(plugin).load();
 
         plugin.addCommand({
-            id: "parse-frontmatter",
+            id: "parse-frontmatter-items",
             name: "Parse Frontmatter for Items",
             callback: () => {
                 ItemWatcher.start(true);
